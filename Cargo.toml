@@ -1,0 +1,12 @@
+[package]
+name = "rust_ray"
+version = "0.1.1"
+authors = ["lokmeinmatz <matze.kind@web.de>"]
+edition = "2018"
+
+[dependencies]
+minifb = "0.13.0"
+num-traits = "0.2"
+simplelog = "0.7.4"
+log = "0.4"
+cgmath = "0.17.0"

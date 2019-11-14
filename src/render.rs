@@ -1,0 +1,128 @@
+use std::sync::{Arc, Mutex, 
+    atomic::{AtomicBool, Ordering},
+    mpsc::{Receiver, sync_channel}};
+use std::thread::{self, JoinHandle};
+use log::{error, info, trace, debug};
+use crate::chunk::Chunk;
+use crate::cam::Camera;
+
+
+#[derive(Clone, Copy)]
+pub struct RenderSettings {
+    pub chunk_size: usize,
+    pub width: usize,
+    pub height: usize
+}
+
+pub struct Renderer {
+    chunk_coords: Arc<Mutex<Vec<(u32, u32)>>>,
+    running: Arc<AtomicBool>,
+    workers: Vec<JoinHandle<()>>,
+    finished_queue: Option<Receiver<Chunk>>
+}
+
+
+impl Renderer {
+    pub fn new(w: usize, h: usize, chunk_size: usize) -> Renderer {
+
+        let mut c_coords = Vec::new();
+        //split into smaller chunks for mulithreading
+        let mut x = 0;
+        while x < w {
+
+            let mut y = 0;
+            while y < h {
+
+                c_coords.push((x as u32, y as u32));
+                
+
+                //println!("Created new Chunk at {0} {1}", x, y);
+
+                y += chunk_size;
+            }
+
+
+
+            x += chunk_size;
+        }
+
+        debug!("Chunks to process: {}", c_coords.len());
+
+        Renderer {
+            chunk_coords: Arc::new(Mutex::new(c_coords)),
+            running: Arc::from(AtomicBool::from(false)),
+            workers: Vec::new(),
+            finished_queue: None
+        }
+    }
+
+    pub fn get_next_finished(&mut self) -> Result<Chunk, ()> {
+        match &self.finished_queue {
+            Some(queue) => {
+                queue.recv().map_err(|_| ())
+            },
+            None => Err(())
+        }
+    }
+
+    pub fn start_render(&mut self, worker_count: usize, settings: RenderSettings, cam: Camera) {
+
+        assert!(self.workers.is_empty());
+
+        self.running.store(true, Ordering::Release);
+
+        let (tx, rx) = sync_channel(30);
+        self.finished_queue = Some(rx);
+        
+        for i in 0..worker_count {
+
+            let running = self.running.clone();
+            let chunk_coords = self.chunk_coords.clone();
+            let cam = cam;
+            let tx = tx.clone();
+
+            match thread::Builder::new().name(format!("Worker #{}", i)).spawn(move || {
+                // Worker Thread start
+                info!("Worker #{} active", i);
+
+                while running.load(Ordering::SeqCst) {
+                    let (x, y) = match chunk_coords.lock() {
+                        Ok(mut coords) => {
+                            match coords.pop() {
+                                Some(c) => c,
+                                None => {
+                                    trace!("No coords in queue");
+                                    break;
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            error!("Error while locking chunk_coords");
+                            continue
+                        }
+                    };
+                    
+                    let mut chunk = Chunk::new_clamped(x as usize, y as usize, settings.chunk_size, settings.width, settings.height).expect("Failed to create Chunk");
+                    chunk.render(&cam);
+                    if tx.send(chunk).is_err() {
+                        error!("Failed to send chunk back");
+                    }
+                }
+
+                debug!("Worker #{} shut down", i);
+                // Worker Thread end
+            }) {
+                Ok(t) => self.workers.push(t),
+                Err(_) => error!("Failed to start worker #{}", i)
+            }
+        }
+    }
+
+    pub fn kill(&mut self) {
+        for worker in self.workers.drain(..) {
+            if worker.join().is_err() {
+                error!("Failed to join a worker");
+            }
+        }
+    }
+}
