@@ -1,11 +1,14 @@
-use std::sync::{Arc, Mutex, 
+use std::sync::{
+    Arc, 
+    Mutex, 
+    RwLock,
     atomic::{AtomicBool, Ordering},
     mpsc::{Receiver, sync_channel}};
+
 use std::thread::{self, JoinHandle};
 use log::{error, info, trace, debug};
+use crate::world::World;
 use crate::chunk::Chunk;
-use crate::cam::Camera;
-
 
 #[derive(Clone, Copy)]
 pub struct RenderSettings {
@@ -18,7 +21,9 @@ pub struct Renderer {
     chunk_coords: Arc<Mutex<Vec<(u32, u32)>>>,
     running: Arc<AtomicBool>,
     workers: Vec<JoinHandle<()>>,
-    finished_queue: Option<Receiver<Chunk>>
+    finished_queue: Option<Receiver<Chunk>>,
+    size: (usize, usize),
+    chunk_size: usize
 }
 
 
@@ -52,7 +57,34 @@ impl Renderer {
             chunk_coords: Arc::new(Mutex::new(c_coords)),
             running: Arc::from(AtomicBool::from(false)),
             workers: Vec::new(),
-            finished_queue: None
+            finished_queue: None,
+            size: (w, h),
+            chunk_size
+        }
+    }
+
+    pub fn reset(&mut self) {
+
+        for worker in self.workers.drain(..) {
+            if worker.join().is_err() {
+                error!("Failed to join a worker");
+            }
+        }
+
+        self.running.store(false, Ordering::Relaxed);
+
+        
+        let mut c_coords = self.chunk_coords.lock().unwrap();
+        let mut x = 0;
+        let (w, h) = self.size;
+        while x < w {
+            let mut y = 0;
+            while y < h {
+                c_coords.push((x as u32, y as u32));
+                //println!("Created new Chunk at {0} {1}", x, y);
+                y += self.chunk_size;
+            }
+            x += self.chunk_size;
         }
     }
 
@@ -65,7 +97,7 @@ impl Renderer {
         }
     }
 
-    pub fn start_render(&mut self, worker_count: usize, settings: RenderSettings, cam: Camera) {
+    pub fn start_render(&mut self, worker_count: usize, settings: RenderSettings, world: Arc<RwLock<World>>) {
 
         assert!(self.workers.is_empty());
 
@@ -78,15 +110,15 @@ impl Renderer {
 
             let running = self.running.clone();
             let chunk_coords = self.chunk_coords.clone();
-            let cam = cam;
+            let world = world.clone();
             let tx = tx.clone();
 
             match thread::Builder::new().name(format!("Worker #{}", i)).spawn(move || {
                 // Worker Thread start
-                info!("Worker #{} active", i);
+                debug!("Worker #{} active", i);
 
-                while running.load(Ordering::SeqCst) {
-                    let (x, y) = match chunk_coords.lock() {
+                while running.load(Ordering::Relaxed) {
+                    let (x, y) = match chunk_coords.try_lock() {
                         Ok(mut coords) => {
                             match coords.pop() {
                                 Some(c) => c,
@@ -97,13 +129,13 @@ impl Renderer {
                             }
                         }
                         Err(_) => {
-                            error!("Error while locking chunk_coords");
+                            //error!("Error while locking chunk_coords");
                             continue
                         }
                     };
                     
                     let mut chunk = Chunk::new_clamped(x as usize, y as usize, settings.chunk_size, settings.width, settings.height).expect("Failed to create Chunk");
-                    chunk.render(&cam);
+                    chunk.render(&world.read().unwrap());
                     if tx.send(chunk).is_err() {
                         error!("Failed to send chunk back");
                     }
@@ -119,6 +151,13 @@ impl Renderer {
     }
 
     pub fn kill(&mut self) {
+        info!("Killing renderer...");
+        self.running.store(false, Ordering::Release);
+
+        // drain not processed chunks
+        if let Some(queue) = &self.finished_queue {
+            while let Ok(_) = queue.recv() {}
+        }
         for worker in self.workers.drain(..) {
             if worker.join().is_err() {
                 error!("Failed to join a worker");

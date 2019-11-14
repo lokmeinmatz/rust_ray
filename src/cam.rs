@@ -8,17 +8,14 @@ pub struct Camera {
     /// Position of the camera sensor
     pub position : Vector3<f64>,
 
-    /// Distance and direction of the aperture, maybe make direction and distance independent?
+    /// Distance and direction of the apterture, maybe make direction and distance independent?
     pub direction : Vector3<f64>,
 
     /// (width / 2, height / 2) of the sensor
     sensor_size: (f64, f64),
 
     /// Sensor resolution in pixels
-    sensor_resolution: (usize, usize),
-
-    /// [Unused] for future variable aperture
-    aperture: f64
+    sensor_resolution: (usize, usize)
 }
 
 impl Camera {
@@ -29,8 +26,7 @@ impl Camera {
         position,
         direction,
         sensor_size,
-        sensor_resolution: resolution,
-        aperture: 0.0
+        sensor_resolution: resolution
       }
     }
 

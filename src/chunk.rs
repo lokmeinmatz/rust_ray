@@ -1,8 +1,7 @@
-use num_traits::{ToPrimitive, Num};
+use num_traits::{AsPrimitive, Num};
 use std;
-use crate::cam::Camera;
-use log::trace;
-use cgmath::prelude::*;
+use crate::world::World;
+use crate::utils;
 
 fn clamp<T : Num + std::cmp::PartialOrd>(value : T, min : T, max : T) -> T {
 
@@ -33,11 +32,11 @@ impl Chunk {
     Ok(Self::new(x, y, chunk_size.min(screen_width - x), chunk_size.min(screen_height - y)))
   }
 
-  fn idx<T: ToPrimitive>(&self, x: T, y: T) -> usize {
-    x.to_usize().unwrap() + y.to_usize().unwrap() * self.width
+  fn idx<T: AsPrimitive<usize>>(&self, x: T, y: T) -> usize {
+    x.as_() + y.as_() * self.width
   }
 
-  pub fn render(&mut self, cam: &Camera) {
+  pub fn render(&mut self, world: &World) {
         //dx / dy : relative positions of ray in chunk
         //x / y : absolute pixel positions
         //println!("Rendering chunk at {}, {}", self.x, self.y);
@@ -45,18 +44,12 @@ impl Chunk {
         for (dx, x) in (self.x..self.x+self.width).enumerate() {
             for (dy, y) in (self.y..self.y+self.height).enumerate() {
 
-                  let ray = cam.create_ray(x, y);
+                  let ray = world.camera.create_ray(x, y);
 
-                  if dx + dy == 0 {
-                    //trace!("Ray dir: {:?}", ray.dir);
-                  }
+                  let color = world.trace_ray(&ray);
 
-                  let r = 200;
-                  let g = 100;
-                  let b = ray.dir.dot(cam.direction.normalize()) * 255.0;
                   let idx = self.idx(dx, dy);
-                  self.data[idx] = (r as u32 & 0xFF) << 16 | (g as u32 & 0xFF) << 8 | (b as u32 & 0xFF);
-                
+                  self.data[idx] = utils::rgb_to_col(color.x * 255.0, color.y * 255.0, color.z * 255.0);
             }
         }
     }
