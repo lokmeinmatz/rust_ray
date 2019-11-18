@@ -1,14 +1,8 @@
 use num_traits::{AsPrimitive, Num};
-use std;
 use crate::world::World;
 use crate::utils;
-
-fn clamp<T : Num + std::cmp::PartialOrd>(value : T, min : T, max : T) -> T {
-
-    if value < min {min}
-    else if value > max {max}
-    else{value}
-}
+use crate::collidables::Color;
+use rand::prelude::ThreadRng;
 
 pub struct Chunk {
     x      : usize,
@@ -18,6 +12,7 @@ pub struct Chunk {
     pub data : Vec<u32>,
     
 }
+
 
 impl Chunk {
 
@@ -36,20 +31,21 @@ impl Chunk {
     x.as_() + y.as_() * self.width
   }
 
-  pub fn render(&mut self, world: &World) {
+  pub fn render(&mut self, world: &World, rng: &mut ThreadRng) {
         //dx / dy : relative positions of ray in chunk
         //x / y : absolute pixel positions
         //println!("Rendering chunk at {}, {}", self.x, self.y);
-
         for (dx, x) in (self.x..self.x+self.width).enumerate() {
             for (dy, y) in (self.y..self.y+self.height).enumerate() {
 
-                  let ray = world.camera.create_ray(x, y);
+                  let mut ray = world.camera.create_ray(x, y, rng);
 
-                  let color = world.trace_ray(&ray);
-
+                  let trace = world.trace_ray(&mut ray);
+                  let color : Color = trace.col;
+                  //let color : Color= (trace.distance as f32 / 10.0, trace.distance as f32 / 10.0, trace.distance as f32 / 10.0).into();
+                  //let color = trace.normal.map(|e| e.mul_add(0.5, 0.5));
                   let idx = self.idx(dx, dy);
-                  self.data[idx] = utils::rgb_to_col(color.x * 255.0, color.y * 255.0, color.z * 255.0);
+                  self.data[idx] = utils::rgb_to_u32(color.x * 255.0, color.y * 255.0, color.z * 255.0);
             }
         }
     }

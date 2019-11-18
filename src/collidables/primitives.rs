@@ -1,26 +1,26 @@
 use cgmath::prelude::*;
 use cgmath::Vector3;
-use super::{Collidable, Collision};
+use super::*;
 use crate::ray::Ray;
 
 pub struct Circle {
     center: Vector3<f64>,
     radius: f64,
-    color: Vector3<f64>
+    mat: Material
 }
 
 impl Circle {
-    pub fn new(center: Vector3<f64>, radius: f64, color: Vector3<f64>) -> Circle {
+    pub fn new(center: Vector3<f64>, radius: f64, mat: Material) -> Circle {
         Circle {
             center,
             radius,
-            color
+            mat
         }
     }
 }
 
 impl Collidable for Circle {
-    fn intersect(&self, ray: &Ray) -> Option<Collision> {
+    fn intersect(&self, ray: &Ray) -> Option<Intersection> {
         // based on https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
 
         let l = self.center - ray.origin; // points towars origin
@@ -45,11 +45,50 @@ impl Collidable for Circle {
 
         let poi = ray.origin + ray.dir * t0;
 
-        Some(Collision {
+        Some(Intersection {
             distance: t0,
-            color: self.color,
-            normal: poi - self.center, // TODO calc normal
+            mat: self.mat,
+            normal: (poi - self.center).normalize(), // TODO calc normal
             poi
+        })
+    }
+}
+
+
+pub struct Plane {
+    position: Vector3<f64>,
+    normal: Vector3<f64>,
+    mat: Material
+}
+
+
+impl Plane {
+    pub fn new(position: Vector3<f64>, normal: Vector3<f64>, mat: Material) -> Plane {
+        Plane {
+            position,
+            normal: normal.normalize(),
+            mat
+        }
+    }
+}
+
+impl Collidable for Plane {
+    fn intersect(&self, ray : &Ray) -> Option<Intersection> {
+        let divisor = ray.dir.dot(self.normal);
+
+        if divisor.abs() < 0.001 { return None; }
+
+        let dividend = (ray.origin - self.position).dot(self.normal);
+
+        let t = dividend / divisor;
+        
+        if t <= 0.0 { return None; }
+
+        Some(Intersection {
+            distance: t,
+            mat: self.mat,
+            normal: self.normal,
+            poi: ray.origin + ray.dir * t
         })
     }
 }

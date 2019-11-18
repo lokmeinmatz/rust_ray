@@ -18,6 +18,9 @@ pub struct Camera {
     sensor_resolution: (usize, usize)
 }
 
+const MAX_BOUNCES: usize = 3;
+use rand::prelude::ThreadRng;
+
 impl Camera {
 
     pub fn new(position : Vector3<f64>, direction : Vector3<f64>, sensor_size: (f64, f64), resolution: (usize, usize)) -> Camera {
@@ -32,7 +35,7 @@ impl Camera {
 
     /// Creates an ray, casted from the pixel's position on the sensor through the aperture hole 
     /// perc x and y must be between -1 and 1, indicating the position on the sensor / image
-    pub fn create_ray(&self, pixel_x: usize, pixel_y: usize) -> Ray {
+    pub fn create_ray<'a>(&self, pixel_x: usize, pixel_y: usize, rng: &'a mut ThreadRng) -> Ray<'a> {
       
 
       let perc_x = (pixel_x as f64 / self.sensor_resolution.0 as f64) * 2.0 - 1.0;
@@ -48,7 +51,7 @@ impl Camera {
 
       let pixel_pos = self.position + (left * -perc_x * self.sensor_size.0) + (up * -perc_y * self.sensor_size.1);
 
-      Ray::new(pixel_pos, ((self.position + self.direction) - pixel_pos).normalize())
+      Ray::new(pixel_pos, ((self.position + self.direction) - pixel_pos).normalize(), MAX_BOUNCES, rng)
     }
 }
 
@@ -56,14 +59,15 @@ impl Camera {
 #[test]
 fn test_cam_ray() {
     let cam = Camera::new((-1.0, 0.0, 0.0).into(), (0.1, 0.0, 0.0).into(), (0.1, 0.1), (10, 10));
+    let mut rng = rand::prelude::thread_rng();
 
-    let mid = cam.create_ray(5, 5);
+    let mid = cam.create_ray(5, 5, &mut rng);
 
     assert_eq!(mid.origin, cam.position);
     assert_eq!(mid.dir, (1.0, 0.0, 0.0).into());
     
     // TODO write better tests
-    let top_left = cam.create_ray(10, 10);
+    let top_left = cam.create_ray(10, 10, &mut rng);
     
     assert_eq!(top_left.origin, cam.position + Vector3::from((0f64, -0.1f64, -0.1f64)));
 

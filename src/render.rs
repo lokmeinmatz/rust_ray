@@ -116,6 +116,8 @@ impl Renderer {
             match thread::Builder::new().name(format!("Worker #{}", i)).spawn(move || {
                 // Worker Thread start
                 debug!("Worker #{} active", i);
+                
+                let mut rng = rand::prelude::thread_rng();
 
                 while running.load(Ordering::Relaxed) {
                     let (x, y) = match chunk_coords.try_lock() {
@@ -135,7 +137,7 @@ impl Renderer {
                     };
                     
                     let mut chunk = Chunk::new_clamped(x as usize, y as usize, settings.chunk_size, settings.width, settings.height).expect("Failed to create Chunk");
-                    chunk.render(&world.read().unwrap());
+                    chunk.render(&world.read().unwrap(), &mut rng);
                     if tx.send(chunk).is_err() {
                         error!("Failed to send chunk back");
                     }
